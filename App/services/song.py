@@ -39,9 +39,14 @@ class Song:
 
         # Full path samples in the sonic pi code for song (excluded from parameter to avoid sending to openai, anthropic, ...)
         project_directory = os.path.join(project_root, "Samples")
+        def replace_sample_path(match):
+            full_path = os.path.normpath(os.path.join(project_directory, match.group(1)))
+            full_path = full_path.replace("\\", "\\\\")
+            return f'sample "{full_path}"'
+
         finalcode = re.sub(
             r'sample\s+"([^"]+)"',
-            lambda match: f'sample "{os.path.normpath(f"{project_directory}/{match.group(1)}").replace("\\", "\\\\")}"',
+            replace_sample_path,
             song_creation_data.sonicpi_code
         )
 

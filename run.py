@@ -4,8 +4,8 @@ The main file that will be executed to run the GPT agent for songwriting.
 import os
 import logging
 import json
-from App.services.agent import GPTAgent
-from App.services.song import Song
+# from App.services.agent import GPTAgent
+from App.services.graph import MusicGraph
 
 def get_available_models():
     return {
@@ -82,11 +82,11 @@ def main():
     logger = logging.getLogger()
     logger.info("Starting Song Generation")
 
-    # Create a GPT agent
-    agent = GPTAgent(selected_model, logger, Song(song_name, logger), agenttype, provider)
+    # Create a MusicGraph instance
+    graph = MusicGraph(selected_model, provider, logger, song_name, genre, duration, additional_information)
 
     # Start the music composition chain
-    agent.execute_composition_chain(genre, duration, additional_information)
+    graph.run()
 
 def setup_logger(song_name):
     # Create 'songs' directory if it doesn't exist
@@ -99,7 +99,9 @@ def setup_logger(song_name):
 
     # Setting up the logger
     log_file = os.path.join(song_directory, 'music_agent.log')
-    logging.basicConfig(filename=log_file, level=logging.INFO,
+    logging.basicConfig(filename=log_file, 
+                        level=logging.INFO,
+                        encoding='utf-8',
                         format='%(asctime)s:%(levelname)s:%(message)s')
 
 def get_valid_duration():

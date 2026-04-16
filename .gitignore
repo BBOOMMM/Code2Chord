@@ -1,2 +1,7 @@
 /Songs/*
 /Samples/*
+
+__pycache__/
+
+.omx/
+.vscode/
