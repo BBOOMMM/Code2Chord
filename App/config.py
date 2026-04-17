@@ -20,6 +20,7 @@ class Config:
 
     SONIC_PI_HOST = os.environ.get('SONIC_PI_HOST') or SETTINGS.get('sonic_pi_IP', 'localhost')
     SONIC_PI_PORT = int(os.environ.get('SONIC_PI_PORT') or SETTINGS.get('sonic_pi_port', 4557))
+    SONIC_PI_EXECUTABLE = os.environ.get('SONIC_PI_EXECUTABLE') or SETTINGS.get('sonic_pi_executable')
 
     API_KEYS = {
         'openai': os.environ.get('OPENAI_API_KEY') or SETTINGS.get('OPENAI_API_KEY'),

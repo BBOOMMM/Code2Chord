@@ -5,6 +5,8 @@ import re
 import os
 import faiss
 import numpy as np
+import requests
+import imghdr
 from sentence_transformers import SentenceTransformer
 
 from langgraph.graph import START, END, StateGraph
@@ -50,12 +52,21 @@ class MusicGraph:
         self.song_description = f"I want to compose a brand new song. I like the " + genre + " genre. If I would describe the song, I would say: " + additional_information
         self.initial_state = self.build_initial_state(song_name, genre, duration)
         self.project_root = Config.PROJECT_ROOT
+        self.songs_directory = os.path.join(self.project_root, 'Songs')
+        if not os.path.exists(self.songs_directory):
+            os.makedirs(self.songs_directory)
+        self.song_directory = os.path.join(self.songs_directory, song_name)
+        if not os.path.exists(self.song_directory):
+           os.makedirs(self.song_directory)
         user_prompt_file = f"{self.project_root}/prompts/node_prompts.json"
         with open(user_prompt_file, "r") as f:
             self.user_prompts = json.load(f)
         system_prompt_file = f"{self.project_root}/prompts/system_prompts.json"
         with open(system_prompt_file, "r") as f:
             self.system_prompts = json.load(f)
+        self.checkpoint_db_path = os.path.join(self.project_root, "music_graph_checkpoints.sqlite")
+        self._checkpointer_cm = None
+        self.checkpointer = None
         self.build_multi_agents()
     
     
@@ -105,7 +116,24 @@ class MusicGraph:
 
     def run(self):
         graph = self.build_graph()
-        return graph.invoke(self.initial_state, {"configurable": {"thread_id": self.song_name}})
+        config = {"configurable": {"thread_id": self.song_name}}
+        checkpoint = self._get_checkpointer().get(config)
+
+        if checkpoint:
+            self.logger.info(f"Resuming existing graph run for song: {self.song_name}")
+            return graph.invoke(None, config=config)
+
+        self.logger.info(f"Starting new graph run for song: {self.song_name}")
+        return graph.invoke(self.initial_state, config=config)
+
+
+    def _get_checkpointer(self):
+        if self.checkpointer is not None:
+            return self.checkpointer
+
+        self._checkpointer_cm = SqliteSaver.from_conn_string(self.checkpoint_db_path)
+        self.checkpointer = self._checkpointer_cm.__enter__()
+        return self.checkpointer
     
     
     def agent_run(self, node_name, agent_name, state: MusicState, codeValidation=False):
@@ -209,14 +237,6 @@ class MusicGraph:
     def create_song_file(self, song_name, code):
         self.logger.info("\nCreating the song file.")
 
-        songs_directory = os.path.join(self.project_root, 'Songs')
-        if not os.path.exists(songs_directory):
-            os.makedirs(songs_directory)
-        # Create the subdirectory for the song
-        song_directory = os.path.join(songs_directory, song_name)
-        if not os.path.exists(song_directory):
-           os.makedirs(song_directory)
-
         header = f"# --{song_name.upper()}-- \n\n"
         if not code.startswith(header):
             code = header + code
@@ -234,11 +254,10 @@ class MusicGraph:
             code
         )
 
-        self.song_dir = song_directory
-        self.logger.info("Writing song to directory: " + self.song_dir)
+        self.logger.info("Writing song to directory: " + self.song_directory)
         self.logger.info("sonic pi code " + finalcode)
 
-        song_file = os.path.join(self.song_dir, song_name + '.rb')
+        song_file = os.path.join(self.song_directory, song_name + '.rb')
 
         if os.path.exists(song_file):
             # Compare the existing file content with the new content
@@ -248,7 +267,7 @@ class MusicGraph:
                 # Find the next available index for renaming
                 index = 1
                 while True:
-                    new_song_file = os.path.join(self.song_dir, f"{song_name}_{index}.rb")
+                    new_song_file = os.path.join(self.song_directory, f"{song_name}_{index}.rb")
                     if not os.path.exists(new_song_file):
                         os.rename(song_file, new_song_file)
                         break
@@ -391,18 +410,66 @@ class MusicGraph:
             }
         return {}
     
-    
-    def Song_Track_Creation(self, state: MusicState):
-        return {}
-
-    def Song_Recording(self, state: MusicState):
-        return {}
 
     def Cover_Art(self, state: MusicState):
-        return {}
+        self.logger.info(f"Starting cover art generation phase.")
+        album_cover_style = ''.join(self.user_prompts["Cover Art"]["user_prompt"])
+        image_prompt = "Album cover style defined as: " + album_cover_style + " / Song on the album described as " + state['song_description'] + "Please create an album cover for this song. The image should be in a square format."
+        
+        if self.provider == "openai":
+            model = ChatOpenAI(
+                model='gpt-image-1.5',
+                api_key=Config.API_KEYS['openai'],
+                base_url="https://z.apiyihe.org/v1"
+            )
+        else:
+            raise NotImplementedError
+        
+        response = model.invoke(
+            {"messages": [{"role": "user", "content": image_prompt}]}
+        )
+        image_url = response["messages"][-1].content.strip()
+        self.logger.info("Image URL: " + image_url)
+        image_response = requests.get(image_url)
+        if image_response.status_code == 200:
+            # Detect image type
+            image_type = imghdr.what(None, h=image_response.content)
+            filename = state['song_name'] + "_cover"
+            if image_type:
+                self.image_type = image_type
+                filename = f"{filename}.{image_type}"
+            file_path = os.path.join(self.song_directory, filename)
+            with open(file_path, 'wb') as file:
+                file.write(image_response.content)
+            self.logger.info(f"Image downloaded as {file_path}")
+            return {
+                "album_url": file_path
+            }
+        else:
+            self.logger.info("Failed to download image")
+            return {}
+
 
     def Booklet_Creation(self, state: MusicState):
-        return {}
+        self.logger.info(f"Starting booklet creation phase.")
+        readme_file = os.path.join(self.song_directory, 'README.md')
+        readme_content = (
+            f"# --- {state['song_name']} ---"
+            f"![Album Cover]({state['song_name']}_cover.{self.image_type})\n"
+            f"\n\nLyrics: \n{state['lyrics']}\n\n"
+            f"---\n\n"
+            f"## Song Parameters\n"
+            f"Song Prompt: {state['song_description']}\n\n"
+            f"Theme: {state['theme']}\n\n"
+            f"Melody: {state['melody']}\n\n"
+            f"Rhythm: {state['rhythm']}\n\n"
+            f"Structure: {state['structure']}\n\n"
+            f"Segments: {state['segments']}\n\n"
+            f"Total Duration: {state['total_duration']} seconds\n\n\n"
+            f"Arrangements: {state['arrangements']}\n\n\n"
+        )
+        with open(readme_file, 'w', encoding='utf-8') as file:
+            file.write(readme_content)
 
 
     def build_graph(self):
@@ -419,8 +486,6 @@ class MusicGraph:
         graph_builder.add_node("Code_Modification", self.Code_Modification)
 
         graph_builder.add_node("Song_mixing", self.Song_mixing)
-        graph_builder.add_node("Song_Track_Creation", self.Song_Track_Creation)
-        graph_builder.add_node("Song_Recording", self.Song_Recording)
         graph_builder.add_node("Cover_Art", self.Cover_Art)
         graph_builder.add_node("Booklet_Creation", self.Booklet_Creation)
 
@@ -442,31 +507,18 @@ class MusicGraph:
         )
 
         graph_builder.add_edge("Code_Modification", "Code_Review")
-        graph_builder.add_edge("Song_mixing", "Song_Track_Creation")
-        graph_builder.add_edge("Song_Track_Creation", "Song_Recording")
-        graph_builder.add_edge("Song_Recording", "Cover_Art")
+        graph_builder.add_edge("Song_mixing", "Cover_Art")
         graph_builder.add_edge("Cover_Art", "Booklet_Creation")
         graph_builder.add_edge("Booklet_Creation", END)
 
-        graph = graph_builder.compile()
+        graph = graph_builder.compile(checkpointer=self._get_checkpointer())
+        
+        try:
+            png_bytes = graph.get_graph().draw_mermaid_png()
+            with open("graph.png", "wb") as f:
+                f.write(png_bytes)
+            print("Saved to graph.png")
+        except Exception as e:
+            print(f"Graph visualization is not available: {e}")
+        
         return graph
-
-
-
-    
-    
-
-# from IPython.display import Image, display
-
-# graph = MusicGraph().build_graph()
-
-# try:
-#     png_bytes = graph.get_graph().draw_mermaid_png()
-
-#     with open("graph.png", "wb") as f:
-#         f.write(png_bytes)
-
-#     display(Image(png_bytes))
-#     print("Saved to graph.png")
-# except Exception as e:
-#     print(f"Graph visualization is not available: {e}")

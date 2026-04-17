@@ -228,7 +228,7 @@
     "codeValidation" : true
   },
 
-    "Song Mixing": {
+  "Song Mixing": {
     "assistant_role_name":"Sonic PI Mix Engineer",
     "user_prompt": [
       "We have the following Sonic PI code: {sonicpi_code}.",
@@ -257,6 +257,13 @@
     "outcome": {
       "sonicpi_code": "sonicpi_code"
     }
+  },
+
+  "Cover Art": {
+    "assistant_role_name":"Sonic PI Mix Engineer",
+    "user_prompt": [
+      "Moody, monochrome-inspired portrait style with a muted blue-gray and sepia-tinted black-and-white palette, soft shadows, dark background, and a melancholic, intimate atmosphere."
+    ]
   }
 
 }
