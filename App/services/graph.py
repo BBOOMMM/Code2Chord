@@ -10,14 +10,15 @@ import imghdr
 from sentence_transformers import SentenceTransformer
 
 from langgraph.graph import START, END, StateGraph
-from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langgraph.types import Command, interrupt
+from langgraph.prebuilt import ToolNode, tools_condition
 
-
-from .songCreationData import SongCreationData
 from App.config import Config
 from .sonicPi import SonicPi
 
@@ -47,7 +48,7 @@ class MusicGraph:
         self.selected_model = selected_model
         self.provider = provider
         self.logger = logger
-        self.MAX_CODE_REVIEW_LOOPS = 3
+        self.MAX_CODE_REVIEW_LOOPS = 1
         self.song_name = song_name
         self.song_description = f"I want to compose a brand new song. I like the " + genre + " genre. If I would describe the song, I would say: " + additional_information
         self.initial_state = self.build_initial_state(song_name, genre, duration)
@@ -98,20 +99,41 @@ class MusicGraph:
                 model=self.selected_model,
                 api_key=Config.API_KEYS['openai'],
                 base_url="https://z.apiyihe.org/v1")
-            # tool_search = TavilySearch(max_results=2)
-            # self.tools = [tool_search]
-            self.tools = []
+            local_sonicpi_tool = self._build_validate_sonicpi_tool()
+            human_review_tool = self._build_human_review_tool()
+            search_tool = TavilySearch(max_results=2)
             self.agents = {}
-            for agent_name in self.system_prompts:
-                system_prompt = self.system_prompts[agent_name]
+            for agent_name, system_prompt in self.system_prompts.items():
+                tools = []
+                # ["Sonic PI coder", "Sonic PI Mix Engineer", "Human Review", "Sonic PI reviewer"]
+                if agent_name in ["Sonic PI coder", "Sonic PI Mix Engineer"]:
+                    tools = [local_sonicpi_tool, search_tool]
+                elif agent_name in ["Human Review"]:
+                    tools = [local_sonicpi_tool, human_review_tool, search_tool]
+                elif agent_name in ["Sonic PI reviewer"]:
+                    tools = [search_tool]
                 agent = create_agent(
-                    self.model,
-                    tools=self.tools,
+                    model=self.model,
+                    tools=tools,
                     system_prompt=system_prompt,
                 )
                 self.agents[agent_name] = agent
         else:
             raise NotImplementedError
+
+
+    def _build_validate_sonicpi_tool(self):
+        @tool
+        def validate_sonicpi_code(sonicpi_code: str) -> str:
+            """Run Sonic Pi code locally and return the feedback message."""
+            songfile_path = self.create_song_file(self.song_name, sonicpi_code)
+            sonic_pi = SonicPi(self.logger)
+            feedback_message = sonic_pi.call_sonicpi(songfile_path, Config.SONIC_PI_HOST, Config.SONIC_PI_PORT)
+            if feedback_message is None:
+                return "Code successfully passed Sonic Pi examination."
+            return feedback_message
+
+        return validate_sonicpi_code
 
 
     def run(self):
@@ -134,8 +156,8 @@ class MusicGraph:
         self._checkpointer_cm = SqliteSaver.from_conn_string(self.checkpoint_db_path)
         self.checkpointer = self._checkpointer_cm.__enter__()
         return self.checkpointer
-    
-    
+
+
     def agent_run(self, node_name, agent_name, state: MusicState, codeValidation=False):
         if node_name not in self.user_prompts:
             raise ValueError(f"No prompt found for node: {node_name}")
@@ -153,7 +175,6 @@ class MusicGraph:
                 {"role": "user", "content": user_prompt}
             ]
             response = self.agents[agent_name].invoke({"messages": messages})
-            # response_text = response.choices[0].message.content # TODO
             response_text = response["messages"][-1].content
             response_text = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
             
@@ -261,7 +282,7 @@ class MusicGraph:
 
         if os.path.exists(song_file):
             # Compare the existing file content with the new content
-            with open(song_file, 'r') as existing_file:
+            with open(song_file, 'r', encoding='utf-8') as existing_file:
                 existing_content = existing_file.read()
             if existing_content != finalcode:
                 # Find the next available index for renaming
@@ -273,17 +294,21 @@ class MusicGraph:
                         break
                     index += 1
                     
-        with open(song_file, 'w') as f:
+        with open(song_file, 'w', encoding='utf-8') as f:
             f.write(finalcode)
             
         return song_file
-            
-    
+        
+
     def validate_and_execute_code(self, songfile_path):
         sonic_pi = SonicPi(self.logger)
         feedback_message = sonic_pi.call_sonicpi(songfile_path, Config.SONIC_PI_HOST, Config.SONIC_PI_PORT)
+        if feedback_message is None:
+            self.logger.info("Code successfully passed Sonic Pi examination.")
+            return True
 
-        if feedback_message is not None and "error" in feedback_message.lower():
+        feedback_lower = feedback_message.lower()
+        if "error" in feedback_lower or "timeout" in feedback_lower:
             self.logger.info(f"Error detected in Sonic Pi execution: {feedback_message}")
             return False
         return True
@@ -377,17 +402,17 @@ class MusicGraph:
     
     def route_after_code_review(self, state: MusicState):
         if state.get("code_review_passed", False):
-            return "Song_mixing"
+            return "Song_Mixing"
 
         if state.get("code_review_loop_count", 0) >= self.MAX_CODE_REVIEW_LOOPS:
-            return "Song_mixing"
+            return "Song_Mixing"
 
-        return "Code_Modification"
+        return "Code_First_Modification"
 
 
-    def Code_Modification(self, state: MusicState):
-        self.logger.info("Starting Code Modification")
-        node_name = "Code Modification"
+    def Code_First_Modification(self, state: MusicState):
+        self.logger.info("Starting Code First Modification")
+        node_name = "Code First Modification"
         agent_name = "Sonic PI coder"
         response_data = self.agent_run(node_name, agent_name, state)
         if response_data:
@@ -397,12 +422,24 @@ class MusicGraph:
                 "code_review_loop_count": state.get("code_review_loop_count", 0) + 1
             }
         return {}
+
+
+    def Code_Second_Modification(self, state: MusicState):
+        self.logger.info("Starting Code Second Modification")
+        node_name = "Code Second Modification"
+        agent_name = "Human Review"
+        response_data = self.agent_run(node_name, agent_name, state)
+        if response_data:
+            return {
+                "sonicpi_code": response_data.get("sonicpi_code", ""),
+            }
+        return {}
     
 
-    def Song_mixing(self, state: MusicState):
+    def Song_Mixing(self, state: MusicState):
         self.logger.info("Starting Song Mixing")
         node_name = "Song Mixing"
-        agent_name = "Sonic PI coder"
+        agent_name = "Sonic PI Mix Engineer"
         response_data = self.agent_run(node_name, agent_name, state)
         if response_data:
             return {
@@ -470,6 +507,21 @@ class MusicGraph:
         )
         with open(readme_file, 'w', encoding='utf-8') as file:
             file.write(readme_content)
+    
+    
+    def _build_human_review_tool(self):
+        @tool
+        def Human_Review(query: str) -> str:
+            """Request suggestions from a human reviewer and return the human's comments."""
+            self.logger.info("\n=== Human Review Requested ===")
+            self.logger.info(f"query: {query}")
+            human_response = input("\nPlease enter your review comments: ").strip()
+            self.logger.info(f"Human review comments: {human_response}")
+            if not human_response:
+                return "The human reviewer is satisfied."
+            return human_response
+
+        return Human_Review
 
 
     def build_graph(self):
@@ -479,13 +531,12 @@ class MusicGraph:
         graph_builder.add_node("Songwriting", self.Songwriting)
         graph_builder.add_node("Segmentation", self.Segmentation)
         graph_builder.add_node("Arrangements", self.Arrangements)
-        graph_builder.add_node("Sampling", self.Sampling)
+        # graph_builder.add_node("Sampling", self.Sampling)
         graph_builder.add_node("Initial_Song_Coding", self.Initial_Song_Coding)
-
         graph_builder.add_node("Code_Review", self.Code_Review)
-        graph_builder.add_node("Code_Modification", self.Code_Modification)
-
-        graph_builder.add_node("Song_mixing", self.Song_mixing)
+        graph_builder.add_node("Code_First_Modification", self.Code_First_Modification)
+        graph_builder.add_node("Code_Second_Modification", self.Code_Second_Modification)
+        graph_builder.add_node("Song_Mixing", self.Song_Mixing)
         graph_builder.add_node("Cover_Art", self.Cover_Art)
         graph_builder.add_node("Booklet_Creation", self.Booklet_Creation)
 
@@ -493,21 +544,21 @@ class MusicGraph:
         graph_builder.add_edge("Conceptualization", "Songwriting")
         graph_builder.add_edge("Songwriting", "Segmentation")
         graph_builder.add_edge("Segmentation", "Arrangements")
-        graph_builder.add_edge("Arrangements", "Sampling")
-        graph_builder.add_edge("Sampling", "Initial_Song_Coding")
+        # graph_builder.add_edge("Arrangements", "Sampling")
+        # graph_builder.add_edge("Sampling", "Initial_Song_Coding")
+        graph_builder.add_edge("Arrangements", "Initial_Song_Coding")
         graph_builder.add_edge("Initial_Song_Coding", "Code_Review")
-
         graph_builder.add_conditional_edges(
             "Code_Review",
             self.route_after_code_review,
             {
-                "Song_mixing": "Song_mixing",
-                "Code_Modification": "Code_Modification",
+                "Song_Mixing": "Song_Mixing",
+                "Code_First_Modification": "Code_First_Modification",
             },
         )
-
-        graph_builder.add_edge("Code_Modification", "Code_Review")
-        graph_builder.add_edge("Song_mixing", "Cover_Art")
+        graph_builder.add_edge("Code_First_Modification", "Code_Review")
+        graph_builder.add_edge("Song_Mixing", "Code_Second_Modification")
+        graph_builder.add_edge("Code_Second_Modification", "Cover_Art")
         graph_builder.add_edge("Cover_Art", "Booklet_Creation")
         graph_builder.add_edge("Booklet_Creation", END)
 

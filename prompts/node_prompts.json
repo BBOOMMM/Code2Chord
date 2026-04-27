@@ -127,6 +127,9 @@
       "\nThe composition should feel complete and cohesive, with a consistent tempo and flow.",
       "Provide a response in JSON format with a separate field for 'sonicpi_code'.",
       "The 'sonicpi_code' field should hold the complete Sonic Pi code (written in Ruby).",
+      "You can utilize online search tools to locate specific Sonic Pi code snippets or techniques, ensuring the syntax is correct. These can assist you in effectively achieving orchestration and structure.",
+      "Your final code should pass local sonic pi examination.",
+      "If your code didn't pass the local sonic pi examination, please modify the code until it does. You may refine your code from the feedback provided.",
       "The response should be formatted as a JSON-compatible string, ready to be parsed. Format the response like this: {\"sonicpi_code\": \"<complete code here>\"}.",
       "**DO NOT** include any additional text, explanations, or comments outside of the JSON format.",
       "**ENSURE** the generated Sonic Pi code adheres strictly to the provided total duration, rhythm, and structure constraints."
@@ -166,6 +169,7 @@
       "4) **Bug-Free**: Ensure there are no potential bugs in the code that would prevent it from running as intended.",
       "5) **Logic Validation**: Beyond syntax, evaluate the logic of the code. Verify that it meets the requirements without losing any features, such as playing multiple instruments in parallel or adhering to the provided arrangements and structure.",
       "6) **Placeholder Detection**: Check for patterns like \"# Add code\" or similar placeholders that indicate incomplete code. If found, note that these sections must be implemented to make the song functional.",
+      "You can use the online search tool if needed.",
       "Provide a response in **JSON format** with a single field for \"review\". The review should:",
       "1) Provide clear and actionable instructions for correcting any issues found in the code.",
       "2) If no corrections are needed, return the review field as: \"no further code changes are required\".",
@@ -189,7 +193,7 @@
     }
   },
 
-  "Code Modification": {
+  "Code First Modification": {
     "assistant_role_name":"Sonic PI coder",
     "user_prompt": [
       "We have the following Sonic PI code: {sonicpi_code}.",
@@ -204,6 +208,9 @@
       "7) **Additional Samples**: You can use the following additional samples (external to Sonic Pi) that match the mood, progression, and instrumentation described above: {samples}.",
       "Modify the code according to the provided review comments.",
       "If the review states \"no further code changes are required\", keep the code unchanged and return the complete code as it is.",
+      "You can utilize online search tools to locate specific Sonic Pi code snippets or techniques, ensuring the syntax is correct. These can assist you in effectively achieving orchestration and structure.",
+      "Your final code should pass local sonic pi examination.",
+      "If your code didn't pass the local sonic pi examination, please modify the code until it does. You may refine your code from the feedback provided.",
       "Your task is to ensure the final code adheres to the initial requirements and resolves all issues or suggestions mentioned in the review.",
       "Provide a response in **JSON format** with a single field for \"sonicpi_code\". This field must contain the **entire Sonic Pi code** (not just the revisions or parts, but the full code for the entire song written in Ruby).",
       "The response should be formatted as a JSON-compatible string, ready to be parsed. Format it as follows: {\"sonicpi_code\": \"<complete code here>\"}.",
@@ -221,6 +228,47 @@
       "samples": "samples",
       "sonicpi_code": "sonicpi_code",
       "review": "review"
+    },
+    "outcome": {
+      "sonicpi_code": "sonicpi_code"
+    },
+    "codeValidation" : true
+  },
+
+  "Code Second Modification": {
+    "assistant_role_name":"Human Review",
+    "user_prompt": [
+      "We have the following Sonic PI code: {sonicpi_code}.",
+      "The requirements of the song were defined as follows:",
+      "1) **Melody**: {melody};",
+      "2) **Rhythm**: {rhythm};",
+      "3) **Song structure**: {structure};",
+      "4) **Total duration**: {total_duration} seconds;",
+      "5) **Segments**: The song is divided into different segments with their own individual timings (in seconds): {segments};",
+      "6) **Arrangements**: For the complete song, as well as its individual segments, the following arrangements were defined: {arrangements};",
+      "7) **Additional Samples**: You can use the following additional samples (external to Sonic Pi) that match the mood, progression, and instrumentation described above: {samples}.",
+      "Please request suggestions from a human.",
+      "Modify the code according to the human comments.",
+      "If the human was satisfied with the code, keep the code unchanged and use the local sonic pi examination tool.",
+      "Your final code should pass local sonic pi examination.",
+      "If your code didn't pass the local sonic pi examination, please modify the code until it does. You may refine your code from the feedback provided.",
+      "You can utilize online search tools to locate specific Sonic Pi code snippets or techniques, ensuring the syntax is correct. These can assist you in effectively achieving orchestration and structure.",
+      "Ensure the final code adheres to the initial requirements and resolves all issues or suggestions mentioned in the review.",
+      "Provide a response in **JSON format** with a single field for \"sonicpi_code\". This field must contain the **entire Sonic Pi code** (not just the revisions or parts, but the full code for the entire song written in Ruby).",
+      "The response should be formatted as a JSON-compatible string, ready to be parsed. Format it as follows: {\"sonicpi_code\": \"<complete code here>\"}.",
+      "Do not include any additional text, explanations, or comments outside of the JSON format.",
+      "Ensure the JSON strictly includes only the \"sonicpi_code\" field, properly formatted and containing the final, complete code."
+    ],
+    "input": {
+      "theme": "theme",
+      "melody": "melody",
+      "rhythm": "rhythm",
+      "structure": "structure",
+      "total_duration": "total_duration",
+      "segments": "segments",
+      "arrangements": "arrangements",
+      "samples": "samples",
+      "sonicpi_code": "sonicpi_code"
     },
     "outcome": {
       "sonicpi_code": "sonicpi_code"

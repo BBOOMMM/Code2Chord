@@ -1,7 +1,9 @@
-/Songs/*
-/Samples/*
+Songs/*
+Samples/*
 
 __pycache__/
 
 .omx/
 .vscode/
+
+*.sqlite

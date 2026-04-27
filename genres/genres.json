@@ -1,0 +1,36 @@
+{
+  "genres": [
+    {
+      "id": 1,
+      "genre": "Trance"
+    },
+    {
+      "id": 2,
+      "genre": "Disco"
+    },
+    {
+      "id": 3,
+      "genre": "Dance"
+    },
+    {
+      "id": 4,
+      "genre": "Elektro"
+    },
+    {
+      "id": 5,
+      "genre": "Drum & Bass"
+    },
+    {
+      "id": 6,
+      "genre": "New Wave"
+    },
+    {
+      "id": 7,
+      "genre": "Psychedelic"
+    },
+    {
+      "id": 8,
+      "genre": "House"
+    }
+  ]
+}

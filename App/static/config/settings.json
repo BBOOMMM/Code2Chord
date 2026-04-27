@@ -1,10 +1,9 @@
 {
   "sonic_pi_IP": "192.168.0.160",
   "sonic_pi_port": "4560",
-  "sonic_pi_executable": "C:\\Program Files\\Sonic Pi\\app\\gui\\build\\Release\\sonic-pi.exe",
-  "ANTHROPIC_API_KEY": "your Anthropic api key",
-  "OPENAI_API_KEY": "sk-DWnTg172FusZkvIMqOwpVMe5IdXT6lxlJTvRNgeMV8Sih2iJ",
-  "AZURE_OPENAI_API_KEY": "your Azure Open AI api key",
-  "AZURE_OPENAI_ENDPOINT": "your Azure Open AI endpoint",
-  "AZURE_OPENAI_VERSION": "2025-03-01-preview"
+  "sonic_pi_executable": "your sonic-pi.exe path",
+  "OPENAI_API_KEY": "your openai key",
+  "LANGSMITH_TRACING": false,
+  "LANGSMITH_API_KEY": "your langsmith api key",
+  "TAVILY_API_KEY": "your tavily api key"
 }

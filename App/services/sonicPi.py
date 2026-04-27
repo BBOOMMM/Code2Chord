@@ -16,8 +16,8 @@ class SonicPi:
         logger,
         feedback_host="127.0.0.1",
         feedback_port=4559,
-        feedback_timeout=20,
-        startup_timeout=30,
+        feedback_timeout=30,
+        startup_timeout=60,
     ):
         self.logger = logger
         self.feedback_host = feedback_host
@@ -94,7 +94,9 @@ class SonicPi:
                     "powershell",
                     "-NoProfile",
                     "-Command",
-                    "(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*spider-server.rb*' } | "
+                    "(Get-CimInstance Win32_Process | Where-Object { "
+                    "$_.Name -eq 'ruby.exe' -and $_.CommandLine -like '*spider-server.rb*' "
+                    "} | "
                     "Select-Object -First 1 -ExpandProperty CommandLine)",
                 ],
                 capture_output=True,
@@ -197,14 +199,22 @@ class SonicPi:
     def _build_feedback_wrapper(self, full_script):
         encoded_script = json.dumps(full_script)
         return f"""
-osc_send '{self.feedback_host}', {self.feedback_port}, '/feedback', 'ACK: received script'
+error_message = nil
 
 in_thread do
   begin
     eval({encoded_script})
   rescue Exception => e
-    osc_send '{self.feedback_host}', {self.feedback_port}, '/feedback', "ERROR: #{{e.message}}"
+    error_message = e.message
   end
+end
+
+sleep 3
+
+if error_message
+  osc_send '{self.feedback_host}', {self.feedback_port}, '/feedback', "ERROR: #{{error_message}}"
+else
+  osc_send '{self.feedback_host}', {self.feedback_port}, '/feedback', 'Code successfully passed Sonic Pi examination.'
 end
 """
 
